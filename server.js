@@ -1,3 +1,5 @@
+////// server.js //////
+
 const express = require("express");
 const path = require("path");
 const config = require("./config.json");
@@ -12,7 +14,7 @@ const startServer = (sessions, startBot) => {
         res.sendFile(path.join(__dirname, 'index.html'));
     });
 
-    // 2. LOGIQUE DE PAIRING (MULTI-INSTANCE SANS CASSER LE PAIRING CODE)
+    // 2. LOGIQUE DE PAIRING (IDENTIQUE À TON ANCIENNE VERSION)
     app.get('/pair', async (req, res) => {
 
         const num = req.query.number;
@@ -23,18 +25,20 @@ const startServer = (sessions, startBot) => {
 
             let marcoInstance = sessions.get(num);
 
-            // Si la session n'existe pas → création
+            // Si la session n'existe pas encore → création
             if (!marcoInstance) {
                 marcoInstance = await startBot(num);
                 sessions.set(num, marcoInstance);
             }
 
-            // ⚠️ IMPORTANT :
-            // On NE DOIT PAS attendre connection "open"
-            // Le pairing code doit être demandé pendant la phase connecting
+            if (!marcoInstance) {
+                return res.status(503).json({ error: "Bot non prêt" });
+            }
+
+            // ⚠️ IMPORTANT : on garde EXACTEMENT le vrai pairing code WhatsApp
             const code = await marcoInstance.requestPairingCode(num);
 
-            res.status(200).json({ code });
+            res.status(200).json({ code: code });
 
         } catch (err) {
             console.error("Erreur Pairing:", err);
