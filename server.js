@@ -7,35 +7,38 @@ const config = require("./config.json");
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-const startServer = (sessions, startBot) => {
+// Map locale pour stocker les instances par numéro
+const instances = new Map();
 
+const startServer = (createBotInstance) => {
+    
     // 1. AFFICHER TON DESIGN MATRIX
     app.get('/', (req, res) => {
         res.sendFile(path.join(__dirname, 'index.html'));
     });
 
-    // 2. LOGIQUE DE PAIRING (IDENTIQUE À TON ANCIENNE VERSION)
+    // 2. LOGIQUE IDENTIQUE DE PAIRING
     app.get('/pair', async (req, res) => {
 
         const num = req.query.number;
 
-        if (!num) return res.status(400).json({ error: "Numéro requis" });
+        if (!num) 
+            return res.status(400).json({ error: "Numéro requis" });
 
         try {
 
-            let marcoInstance = sessions.get(num);
+            let marcoInstance = instances.get(num);
 
-            // Si la session n'existe pas encore → création
+            // Si aucune instance pour ce numéro → on en crée une
             if (!marcoInstance) {
-                marcoInstance = await startBot(num);
-                sessions.set(num, marcoInstance);
+                marcoInstance = await createBotInstance(num);
+                instances.set(num, marcoInstance);
             }
 
-            if (!marcoInstance) {
+            if (!marcoInstance)
                 return res.status(503).json({ error: "Bot non prêt" });
-            }
 
-            // ⚠️ IMPORTANT : on garde EXACTEMENT le vrai pairing code WhatsApp
+            // EXACTEMENT la même logique que ton code original
             const code = await marcoInstance.requestPairingCode(num);
 
             res.status(200).json({ code: code });
