@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Marco xmd - Pairing</title>
+<style>
+    body {
+        margin:0;
+        background:black;
+        color:#0f0;
+        font-family:'Courier New', monospace;
+        display:flex;
+        justify-content:center;
+        align-items:center;
+        height:100vh;
+    }
+    .box {
+        border:2px solid #0f0;
+        padding:30px;
+        text-align:center;
+        background:rgba(0,0,0,0.9);
+        border-radius:10px;
+        width:90%;
+        max-width:400px;
+        box-shadow:0 0 25px #0f0;
+    }
+    input {
+        background:transparent;
+        border:1px solid #0f0;
+        color:#0f0;
+        padding:12px;
+        margin:15px 0;
+        width:100%;
+        text-align:center;
+        outline:none;
+        font-size:1.1em;
+    }
+    button {
+        background:#0f0;
+        color:black;
+        border:none;
+        padding:12px;
+        cursor:pointer;
+        width:100%;
+        font-weight:bold;
+        transition:0.3s;
+    }
+    button:hover { background:#0a0; transform:scale(1.02); }
+    #status { margin-top:15px; word-break:break-all; }
+</style>
+</head>
+<body>
+<div class="box">
+    <h1>𝐌𝐚𝐫𝐜𝐨 𝐱𝐦𝐝</h1>
+    <p>Entrez votre numéro de téléphone avec l'indicatif (ex: 509...)</p>
+    <input type="number" id="phone" placeholder="Ex: 50944001122" onkeypress="if(event.key==='Enter') createSession()">
+    <button onclick="createSession()">CRÉER LA SESSION</button>
+    <div id="status"></div>
+</div>
+
+<script>
+async function createSession() {
+    const numInput = document.getElementById('phone');
+    const status = document.getElementById('status');
+    const num = numInput.value.replace(/[^0-9]/g, '');
+
+    if(!num || num.length < 8) return alert("Veuillez entrer un numéro valide !");
+
+    status.innerText = "Création de la session et génération du pairing code...";
+
+    try {
+        const res = await fetch('/pair', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ number: num })
+        });
+
+        const data = await res.json();
+
+        if(data.code) {
+            status.innerHTML = `<b>✅ Pairing code généré pour ${num} :</b><br><span style="color:#fff; font-size:1.5em;">${data.code}</span><br><br>Collez ce code dans WhatsApp → Appareils connectés.`;
+            numInput.value = "";
+        } else if(data.error) {
+            status.innerText = `❌ Erreur : ${data.error}`;
+        } else {
+            status.innerText = "❌ Une erreur inconnue est survenue.";
+        }
+
+    } catch(err) {
+        status.innerText = "❌ Erreur serveur. Vérifiez que le bot est en ligne.";
+        console.error(err);
+    }
+}
+</script>
+</body>
+</html>
