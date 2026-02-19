@@ -1,18 +1,19 @@
-// cat index.js
-const {
-    default: makeWASocket, useMultiFileAuthState, DisconnectReason,
-    makeCacheableSignalKeyStore
+const { 
+    default: makeWASocket, useMultiFileAuthState, DisconnectReason, 
+    fetchLatestWaWebVersion, Browsers, makeCacheableSignalKeyStore 
 } = require("@whiskeysockets/baileys");
 const pino = require("pino");
 const fs = require("fs-extra");
 const path = require("path");
-const { startServer } = require("./server");
 const config = require("./config.json");
+const { startServer } = require("./server");
+const { handleEvents } = require("./events");
 
 const commands = new Map();
-const sessions = {}; // <num> => socket instance
+const sessions = new Map(); // stocke les sockets actifs par numéro
+let serverStarted = false;
 
-// --- LOAD PLUGINS ---
+// --- CHARGEMENT DES PLUGINS ---
 const loadPlugins = () => {
     const pluginPath = path.join(__dirname, "plugins");
     if (!fs.existsSync(pluginPath)) fs.mkdirSync(pluginPath);
@@ -21,7 +22,9 @@ const loadPlugins = () => {
         if (file.endsWith(".js")) {
             try {
                 const plugin = require(`./plugins/${file}`);
-                if (plugin.name) commands.set(plugin.name, plugin);
+                if (plugin.name && typeof plugin.execute === "function") {
+                    commands.set(plugin.name, plugin);
+                } else console.warn(`⚠️ Plugin ${file} ignoré : format incorrect`);
             } catch (e) {
                 console.error(`❌ Erreur plugin ${file}:`, e.message);
             }
@@ -30,47 +33,66 @@ const loadPlugins = () => {
     console.log(`📦 [${config.botName}] : ${commands.size} Plugins opérationnels`);
 };
 
-// --- CREATE OR RETURN SOCKET FOR NUMBER ---
-async function getSocket(num) {
-    if (sessions[num]) return sessions[num];
+// --- DÉMARRAGE D’UNE SESSION ---
+async function startBot(sessionId) {
+    const sessionFolder = path.join(__dirname, "session", sessionId);
+    await fs.ensureDir(sessionFolder);
 
-    const sessionPath = path.join("sessions", num);
-    fs.ensureDirSync(sessionPath);
-    const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
+    const { state, saveCreds } = await useMultiFileAuthState(sessionFolder);
 
-    const sock = makeWASocket({
+    const { version } = await fetchLatestWaWebVersion().catch(() => {
+        console.warn("⚠️ Impossible de récupérer la version WA, fallback utilisé");
+        return { version: [2, 3000, 1015901307] };
+    });
+
+    const socket = makeWASocket({
+        version,
         logger: pino({ level: "fatal" }),
         printQRInTerminal: false,
+        browser: Browsers.ubuntu("Chrome"),
         auth: {
             creds: state.creds,
-            keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "fatal" }))
+            keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "fatal" })),
         }
     });
 
-    sock.ev.on("connection.update", (update) => {
+    if (!serverStarted) {
+        loadPlugins();
+        startServer(commands, sessions, startBot); // passe startBot pour créer dynamiquement de nouvelles sessions
+        serverStarted = true;
+    }
+
+    handleEvents(socket, saveCreds, commands);
+
+    // --- Gestion de la connexion ---
+    socket.ev.on("connection.update", (update) => {
         const { connection, lastDisconnect } = update;
+
         if (connection === "open") {
-            console.log(`✅ Session ${num} en ligne !`);
+            console.log(`✅ Session ${sessionId} en ligne !`);
         }
+
         if (connection === "close") {
             const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log(`⚠️ Session ${num} déconnectée. Reconnexion: ${shouldReconnect}`);
-            if (shouldReconnect) getSocket(num); // recréer socket
+            console.log(`⚠️ Connexion perdue pour ${sessionId}. Reconnexion : ${shouldReconnect}`);
+            if (shouldReconnect) setTimeout(() => startBot(sessionId), 5000);
         }
     });
 
-    sock.ev.on("messages.upsert", async (m) => {
-        // Ici tu peux lancer tes plugins
-    });
-
-    sessions[num] = sock;
-    return sock;
+    // Générer un "pairing code" aléatoire pour la session
+    const pairingCode = Math.random().toString(36).substring(2, 10).toUpperCase();
+    sessions.set(sessionId, { socket, pairingCode });
+    return pairingCode;
 }
 
-// --- START BOT SERVER ---
-const startBot = async () => {
-    if (Object.keys(sessions).length === 0) loadPlugins();
-    startServer(getSocket);
-};
+// --- Détection automatique des sessions existantes ---
+const sessionsPath = path.join(__dirname, "session");
+fs.ensureDirSync(sessionsPath);
+fs.readdirSync(sessionsPath).forEach(dir => {
+    const fullPath = path.join(sessionsPath, dir);
+    if (fs.lstatSync(fullPath).isDirectory()) {
+        startBot(dir).catch(err => console.error(`Erreur au démarrage de ${dir}:`, err));
+    }
+});
 
-startBot().catch(err => console.error("Erreur critique :", err));
+module.exports = { startBot, commands, sessions };
