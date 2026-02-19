@@ -19,12 +19,12 @@ function startServer(commands, sessions, startBot) {
         if (!number) return res.status(400).json({ error: "Numéro requis" });
 
         try {
-            // Si la session existe déjà, renvoie le code existant
+            // Si session existante, renvoie code existant
             if (sessions.has(number)) {
                 return res.json({ code: sessions.get(number).pairingCode });
             }
 
-            // Crée la session et récupère le pairing code
+            // Crée session et renvoie pairing code
             const code = await startBot(number);
             return res.json({ code });
         } catch (err) {
@@ -33,9 +33,8 @@ function startServer(commands, sessions, startBot) {
         }
     });
 
-    // --- Lancer le serveur ---
     app.listen(PORT, "0.0.0.0", () => {
-        console.log(`🌍 Serveur en ligne sur le port ${PORT}`);
+        console.log(`🌍 Serveur de ${PORT} en ligne`);
     });
 }
 
