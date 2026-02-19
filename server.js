@@ -1,5 +1,3 @@
-////// server.js //////
-
 const express = require("express");
 const path = require("path");
 const config = require("./config.json");
@@ -14,7 +12,7 @@ const startServer = (sessions, startBot) => {
         res.sendFile(path.join(__dirname, 'index.html'));
     });
 
-    // 2. LOGIQUE DE PAIRING (MULTI-INSTANCE SANS MODIFIER LE FONCTIONNEMENT)
+    // 2. LOGIQUE DE PAIRING (MULTI-INSTANCE SANS CASSER LE PAIRING CODE)
     app.get('/pair', async (req, res) => {
 
         const num = req.query.number;
@@ -31,26 +29,9 @@ const startServer = (sessions, startBot) => {
                 sessions.set(num, marcoInstance);
             }
 
-            // ⚠️ Attendre que le socket soit prêt
-            await new Promise((resolve, reject) => {
-
-                if (marcoInstance.ws?.readyState === 1) {
-                    return resolve();
-                }
-
-                const timeout = setTimeout(() => {
-                    reject(new Error("Socket non prêt"));
-                }, 10000);
-
-                marcoInstance.ev.once("connection.update", (update) => {
-                    if (update.connection === "open") {
-                        clearTimeout(timeout);
-                        resolve();
-                    }
-                });
-            });
-
-            // Génération du vrai pairing code WhatsApp
+            // ⚠️ IMPORTANT :
+            // On NE DOIT PAS attendre connection "open"
+            // Le pairing code doit être demandé pendant la phase connecting
             const code = await marcoInstance.requestPairingCode(num);
 
             res.status(200).json({ code });
