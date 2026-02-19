@@ -1,38 +1,53 @@
-// cat server.js
 const express = require("express");
 const path = require("path");
-const app = express();
+const fs = require("fs-extra");
+const { startBot, sessions, commands } = require("./index");
 const config = require("./config.json");
 
-const startServer = (getSocketFunc) => {
-    const PORT = process.env.PORT || 3000;
+const app = express();
+const PORT = process.env.PORT || 10000;
 
-    app.use(express.static(path.join(__dirname, "public")));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-    app.get("/", (req, res) => {
-        res.sendFile(path.join(__dirname, "public/index.html"));
-    });
+// --- Page principale ---
+app.get("/", (req, res) => {
+    res.sendFile(path.join(__dirname, "index.html"));
+});
 
-    // --- Pairing code pour chaque numéro ---
-    app.get("/pair", async (req, res) => {
-        const num = req.query.number;
-        if (!num) return res.status(400).json({ error: "Numéro requis" });
+// --- Endpoint pour générer le pairing code ---
+app.post("/pair", async (req, res) => {
+    const { number } = req.body;
+    if (!number) return res.status(400).json({ error: "Numéro requis" });
 
-        try {
-            const sock = await getSocketFunc(num);
-            if (!sock) return res.status(503).json({ error: "Bot non prêt" });
-
-            const code = await sock.requestPairingCode(num);
-            res.status(200).json({ code });
-        } catch (err) {
-            console.error(`Erreur Pairing (${num}):`, err);
-            res.status(500).json({ error: "Erreur génération code" });
+    try {
+        // Si la session existe déjà, renvoie le code existant
+        if (sessions.has(number)) {
+            return res.json({ code: sessions.get(number).pairingCode });
         }
-    });
 
-    app.listen(PORT, "0.0.0.0", () => {
-        console.log(`🌍 Serveur de ${config.botName} en ligne sur http://localhost:${PORT}`);
-    });
-};
+        // Crée la session et récupère le pairing code
+        const code = await startBot(number);
+        console.log(`🟢 Pairing code généré pour ${number}: ${code}`);
+        return res.json({ code });
+    } catch (err) {
+        console.error(`Erreur création session ${number}:`, err);
+        return res.status(500).json({ error: "Impossible de créer la session" });
+    }
+});
 
-module.exports = { startServer };
+// --- Lancer le serveur ---
+app.listen(PORT, "0.0.0.0", () => {
+    console.log(`🌍 Serveur de ${config.botName} en ligne sur le port ${PORT}`);
+});
+
+// --- Détecte automatiquement les sessions existantes au démarrage ---
+const sessionsPath = path.join(__dirname, "session");
+fs.ensureDirSync(sessionsPath);
+
+fs.readdirSync(sessionsPath).forEach(dir => {
+    const fullPath = path.join(sessionsPath, dir);
+    if (fs.lstatSync(fullPath).isDirectory()) {
+        startBot(dir).catch(err => console.error(`Erreur au démarrage de ${dir}:`, err));
+    }
+});
