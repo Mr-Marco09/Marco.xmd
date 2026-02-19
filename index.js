@@ -10,10 +10,10 @@ const { startServer } = require("./server");
 const { handleEvents } = require("./events");
 
 const commands = new Map();
-const sessions = new Map(); // stocke les sockets actifs par numéro
+const sessions = new Map(); // Stocke les sockets et pairing code par numéro
 let serverStarted = false;
 
-// --- CHARGEMENT DES PLUGINS ---
+// --- Chargement des plugins ---
 const loadPlugins = () => {
     const pluginPath = path.join(__dirname, "plugins");
     if (!fs.existsSync(pluginPath)) fs.mkdirSync(pluginPath);
@@ -33,7 +33,7 @@ const loadPlugins = () => {
     console.log(`📦 [${config.botName}] : ${commands.size} Plugins opérationnels`);
 };
 
-// --- DÉMARRAGE D’UNE SESSION ---
+// --- Création d'une session pour un numéro ---
 async function startBot(sessionId) {
     const sessionFolder = path.join(__dirname, "session", sessionId);
     await fs.ensureDir(sessionFolder);
@@ -58,7 +58,7 @@ async function startBot(sessionId) {
 
     if (!serverStarted) {
         loadPlugins();
-        startServer(commands, sessions, startBot); // passe startBot pour créer dynamiquement de nouvelles sessions
+        startServer(commands, sessions, startBot); // passe tout au serveur
         serverStarted = true;
     }
 
@@ -79,15 +79,16 @@ async function startBot(sessionId) {
         }
     });
 
-    // Générer un "pairing code" aléatoire pour la session
+    // Générer un pairing code alphanumérique
     const pairingCode = Math.random().toString(36).substring(2, 10).toUpperCase();
     sessions.set(sessionId, { socket, pairingCode });
     return pairingCode;
 }
 
-// --- Détection automatique des sessions existantes ---
+// --- Auto-démarrage des sessions existantes ---
 const sessionsPath = path.join(__dirname, "session");
 fs.ensureDirSync(sessionsPath);
+
 fs.readdirSync(sessionsPath).forEach(dir => {
     const fullPath = path.join(sessionsPath, dir);
     if (fs.lstatSync(fullPath).isDirectory()) {
@@ -95,4 +96,4 @@ fs.readdirSync(sessionsPath).forEach(dir => {
     }
 });
 
-module.exports = { startBot, commands, sessions };
+module.exports = { startBot, sessions, commands };
