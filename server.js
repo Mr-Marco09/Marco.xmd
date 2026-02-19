@@ -1,40 +1,47 @@
 const express = require("express");
 const path = require("path");
+const config = require("./config.json");
 
-function startServer(commands, sessions, startBot) {
-    const app = express();
-    const PORT = process.env.PORT || 10000;
+const app = express();
+const PORT = process.env.PORT || 10000;
 
-    app.use(express.json());
-    app.use(express.urlencoded({ extended: true }));
+// On utilise JSON et URL Encoded pour POST si besoin
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-    // --- Page principale ---
+// --- Démarrage du serveur avec multi-numéros ---
+function startServer(sessions, startBot, commands) {
+
+    // Page principale
     app.get("/", (req, res) => {
         res.sendFile(path.join(__dirname, "index.html"));
     });
 
-    // --- Endpoint pour générer un pairing code ---
-    app.post("/pair", async (req, res) => {
-        const { number } = req.body;
+    // Endpoint pour récupérer le pairing code pour un numéro
+    app.get("/pair", async (req, res) => {
+        const number = req.query.number;
         if (!number) return res.status(400).json({ error: "Numéro requis" });
 
         try {
-            // Si session existante, renvoie code existant
-            if (sessions.has(number)) {
-                return res.json({ code: sessions.get(number).pairingCode });
+            // Si la session existe déjà, on renvoie l’instance existante
+            let marcoInstance = sessions.get(number);
+            if (!marcoInstance) {
+                // Crée la session si elle n’existe pas
+                marcoInstance = await startBot(number);
             }
 
-            // Crée session et renvoie pairing code
-            const code = await startBot(number);
-            return res.json({ code });
+            // --- Utilisation du vrai pairing code WhatsApp ---
+            const code = await marcoInstance.requestPairingCode(number);
+
+            res.status(200).json({ code });
         } catch (err) {
-            console.error(`Erreur création session ${number}:`, err);
-            return res.status(500).json({ error: "Impossible de créer la session" });
+            console.error(`Erreur Pairing pour ${number}:`, err);
+            res.status(500).json({ error: "Erreur lors de la génération du code" });
         }
     });
 
     app.listen(PORT, "0.0.0.0", () => {
-        console.log(`🌍 Serveur de ${PORT} en ligne`);
+        console.log(`🌍 Serveur de ${config.botName} en ligne sur le port ${PORT}`);
     });
 }
 
