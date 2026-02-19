@@ -23,18 +23,37 @@ const startServer = (sessions, startBot) => {
 
         try {
 
-            // Vérifie si la session existe déjà
             let marcoInstance = sessions.get(num);
 
-            // Si elle n'existe pas → création pour ce numéro
+            // Si la session n'existe pas → création
             if (!marcoInstance) {
                 marcoInstance = await startBot(num);
+                sessions.set(num, marcoInstance);
             }
+
+            // ⚠️ Attendre que le socket soit prêt
+            await new Promise((resolve, reject) => {
+
+                if (marcoInstance.ws?.readyState === 1) {
+                    return resolve();
+                }
+
+                const timeout = setTimeout(() => {
+                    reject(new Error("Socket non prêt"));
+                }, 10000);
+
+                marcoInstance.ev.once("connection.update", (update) => {
+                    if (update.connection === "open") {
+                        clearTimeout(timeout);
+                        resolve();
+                    }
+                });
+            });
 
             // Génération du vrai pairing code WhatsApp
             const code = await marcoInstance.requestPairingCode(num);
 
-            res.status(200).json({ code: code });
+            res.status(200).json({ code });
 
         } catch (err) {
             console.error("Erreur Pairing:", err);
